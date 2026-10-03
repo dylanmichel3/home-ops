@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Ops</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 640px; margin: 0 auto; padding: 1.25rem;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .card {
+    border: 1px solid #8886; border-radius: 10px;
+    padding: 1rem; margin: 1rem 0;
+  }
+  .card h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  input[type="password"], input[type="text"] {
+    padding: 0.5rem 0.7rem; border: 1px solid #8886; border-radius: 8px;
+    font-size: 1rem; flex: 1; min-width: 200px;
+  }
+  button {
+    padding: 0.55rem 1rem; border-radius: 8px; font-size: 1rem;
+    border: 1px solid #8886; background: #eee; cursor: pointer;
+    min-height: 44px;
+  }
+  @media (prefers-color-scheme: dark) { button { background: #333; color: #fff; } }
+  button.danger { border-color: #b00; color: #b00; }
+  button.armed { background: #b00; color: #fff; border-color: #b00; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .stat { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+  .bar { height: 8px; background: #8883; border-radius: 4px; overflow: hidden; margin: 0.15rem 0 0.5rem; }
+  .bar > div { height: 100%; background: #2a7; }
+  .msg { margin-top: 0.5rem; font-size: 0.95rem; }
+  .msg.error { color: #b00; }
+  .msg.ok { color: #2a7; }
+  .hint { color: #777; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>Home Ops</h1>
+<p class="hint">Remote control for this PC, over Tailscale only.</p>
+
+<div class="card">
+  <h2>Token</h2>
+  <div class="row">
+    <input type="password" id="token" placeholder="Bearer token from config.json" autocomplete="off">
+    <button id="saveToken">Save</button>
+  </div>
+  <p class="hint">Stored only in this browser tab's session storage.</p>
+</div>
+
+<div class="card">
+  <h2>Status</h2>
+  <div class="row"><button id="refresh">Refresh status</button></div>
+  <div id="status"><p class="hint">Not loaded yet.</p></div>
+  <div class="msg" id="statusMsg"></div>
+</div>
+
+<div class="card">
+  <h2>Wake on LAN</h2>
+  {% if devices %}
+  <div class="row">
+    {% for name in devices %}
+    <button data-wake="{{ name }}">Wake {{ name }}</button>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No devices configured yet. Add some to <code>config.json</code>.</p>
+  {% endif %}
+  <div class="msg" id="wolMsg"></div>
+</div>
+
+<div class="card">
+  <h2>Power</h2>
+  <div class="row">
+    <button data-power="sleep">Sleep</button>
+    <button data-power="restart" class="danger">Restart</button>
+    <button data-power="shutdown" class="danger">Shut down</button>
+  </div>
+  <p class="hint">Tap once to arm, tap again to confirm.</p>
+  <div class="msg" id="powerMsg"></div>
+</div>
+
+<script>
+const tokenInput = document.getElementById('token');
+tokenInput.value = sessionStorage.getItem('homeops_token') || '';
+document.getElementById('saveToken').onclick = () => {
+  sessionStorage.setItem('homeops_token', tokenInput.value.trim());
+  flash('statusMsg', 'Token saved for this tab.', false);
+};
+
+function headers() {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + (sessionStorage.getItem('homeops_token') || '')
+  };
+}
+
+function flash(id, text, isError) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (isError ? 'error' : 'ok');
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + m + 'm';
+}
+
+document.getElementById('refresh').onclick = async () => {
+  const box = document.getElementById('status');
+  box.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const r = await fetch('/api/status', {headers: headers()});
+    if (r.status === 401) throw new Error('Wrong token. Save the right one above.');
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    const s = await r.json();
+    box.innerHTML =
+      stat('Host', s.hostname) +
+      stat('OS', s.os) +
+      stat('Uptime', fmtUptime(s.uptime_seconds)) +
+      stat('CPU', s.cpu_percent + '%') + bar(s.cpu_percent) +
+      stat('Memory', s.memory_used_gb + ' / ' + s.memory_total_gb + ' GB (' + s.memory_percent + '%)') + bar(s.memory_percent) +
+      stat('Disk', s.disk_free_gb + ' GB free (' + s.disk_percent + '% used)') + bar(s.disk_percent);
+    flash('statusMsg', 'Updated just now.', false);
+  } catch (e) {
+    box.innerHTML = '<p class="hint">Could not load status.</p>';
+    flash('statusMsg', e.message, true);
+  }
+};
+
+function stat(k, v) { return '<div class="stat"><span>' + k + '</span><strong>' + v + '</strong></div>'; }
+function bar(p) { return '<div class="bar"><div style="width:' + Math.min(100, p) + '%"></div></div>'; }
+
+document.querySelectorAll('[data-wake]').forEach(btn => {
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/wol', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({device: btn.dataset.wake})
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('Request failed: ' + r.status));
+      flash('wolMsg', 'Magic packet sent to ' + btn.dataset.wake + ' (' + j.mac + ').', false);
+    } catch (e) {
+      flash('wolMsg', e.message, true);
+    }
+    btn.disabled = false;
+  };
+});
+
+document.querySelectorAll('[data-power]').forEach(btn => {
+  btn.onclick = async () => {
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed');
+      btn.textContent = 'Tap again: ' + btn.dataset.power;
+      setTimeout(() => { btn.classList.remove('armed'); btn.textContent = btn.dataset.power[0].toUpperCase() + btn.dataset.power.slice(1); }, 5000);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/power', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({action: btn.dataset.power, confirm: true})
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('Request failed: ' + r.status));
+      flash('powerMsg', 'Power action sent: ' + j.action + '.', false);
+    } catch (e) {
+      flash('powerMsg', e.message, true);
+    }
+    btn.disabled = false;
+  };
+});
+</script>
+</body>
+</html>
