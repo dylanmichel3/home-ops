@@ -9,6 +9,8 @@ import json
 import os
 import platform
 import subprocess
+import threading
+import time
 from datetime import datetime
 from functools import wraps
 
@@ -102,6 +104,90 @@ def api_power():
         return jsonify({"error": "action must be sleep, shutdown, or restart"}), 400
     subprocess.Popen(commands[action])
     return jsonify({"ok": True, "action": action})
+
+
+PATCH_CACHE = {
+    "fetched_at": None,
+    "data": {
+        "pending_count": None,
+        "pending_titles": [],
+        "reboot_required": None,
+        "last_hotfix": None,
+        "last_hotfix_id": None,
+    },
+}
+PATCH_SCRIPT = os.path.join(BASE_DIR, "patch_check.ps1")
+
+
+def run_patch_check():
+    """Run the PowerShell patch check and return its parsed JSON."""
+    proc = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            PATCH_SCRIPT,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if not proc.stdout.strip():
+        raise RuntimeError("patch script produced no output: " + proc.stderr.strip()[:200])
+    return json.loads(proc.stdout)
+
+
+def refresh_patch_cache_loop():
+    while True:
+        try:
+            data = run_patch_check()
+            PATCH_CACHE["data"] = {
+                "pending_count": data.get("pending_count"),
+                "pending_titles": data.get("pending_titles", [])[:25],
+                "reboot_required": data.get("reboot_required"),
+                "last_hotfix": data.get("last_hotfix"),
+                "last_hotfix_id": data.get("last_hotfix_id"),
+            }
+            PATCH_CACHE["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+        except Exception:
+            pass  # keep the previous cache; the next cycle retries
+        time.sleep(6 * 3600)
+
+
+threading.Thread(target=refresh_patch_cache_loop, daemon=True).start()
+
+
+@app.get("/api/health")
+def api_health():
+    """Minimal public health for the monitoring cron. The service is
+    tailnet-only, and the token still guards full status and every action."""
+    disk = psutil.disk_usage(os.path.abspath(os.sep))
+    mem = psutil.virtual_memory()
+    boot = datetime.fromtimestamp(psutil.boot_time())
+    return jsonify(
+        {
+            "ok": True,
+            "uptime_seconds": int((datetime.now() - boot).total_seconds()),
+            "disk_percent": disk.percent,
+            "memory_percent": mem.percent,
+            "patch": PATCH_CACHE["data"],
+            "patch_fetched_at": PATCH_CACHE["fetched_at"],
+        }
+    )
+
+
+@app.get("/api/patches")
+@require_token
+def api_patches():
+    return jsonify(
+        {
+            "fetched_at": PATCH_CACHE["fetched_at"],
+            **PATCH_CACHE["data"],
+        }
+    )
 
 
 if __name__ == "__main__":

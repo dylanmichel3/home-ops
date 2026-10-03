@@ -61,6 +61,13 @@
 </div>
 
 <div class="card">
+  <h2>Updates</h2>
+  <div class="row"><button id="patchCheck">Check updates</button></div>
+  <div id="patches"><p class="hint">Not loaded yet.</p></div>
+  <div class="msg" id="patchMsg"></div>
+</div>
+
+<div class="card">
   <h2>Wake on LAN</h2>
   {% if devices %}
   <div class="row">
@@ -135,6 +142,37 @@ document.getElementById('refresh').onclick = async () => {
 
 function stat(k, v) { return '<div class="stat"><span>' + k + '</span><strong>' + v + '</strong></div>'; }
 function bar(p) { return '<div class="bar"><div style="width:' + Math.min(100, p) + '%"></div></div>'; }
+function esc(s) { return String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+document.getElementById('patchCheck').onclick = async () => {
+  const box = document.getElementById('patches');
+  box.innerHTML = '<p class="hint">Checking... (the first check after startup can take a minute)</p>';
+  try {
+    const r = await fetch('/api/patches', {headers: headers()});
+    if (r.status === 401) throw new Error('Wrong token. Save the right one above.');
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    const p = await r.json();
+    let html;
+    if (p.pending_count === null || p.pending_count === undefined) {
+      html = '<p class="hint">No patch data yet. The app refreshes it in the background every few hours after starting.</p>';
+    } else {
+      html = stat('Pending updates', p.pending_count) +
+        stat('Reboot required', p.reboot_required ? 'Yes' : 'No') +
+        stat('Last hotfix', esc(p.last_hotfix || 'unknown') + (p.last_hotfix_id ? ' (' + esc(p.last_hotfix_id) + ')' : ''));
+      if (p.reboot_required) html = '<p class="msg error">Reboot pending.</p>' + html;
+      if (p.pending_titles && p.pending_titles.length) {
+        html += '<p class="hint">Latest:</p><ul>' +
+          p.pending_titles.slice(0, 8).map(t => '<li>' + esc(t) + '</li>').join('') + '</ul>';
+      }
+      if (p.fetched_at) html += '<p class="hint">Checked: ' + esc(p.fetched_at) + '</p>';
+    }
+    box.innerHTML = html;
+    flash('patchMsg', 'Update info loaded.', false);
+  } catch (e) {
+    box.innerHTML = '<p class="hint">Could not load update info.</p>';
+    flash('patchMsg', e.message, true);
+  }
+};
 
 document.querySelectorAll('[data-wake]').forEach(btn => {
   btn.onclick = async () => {

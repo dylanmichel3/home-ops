@@ -10,10 +10,22 @@ bearer token, so nothing else on the tailnet can use it without the secret.
 
 ## What it does
 
-- `GET /` — dashboard: status, Wake-on-LAN buttons, power controls
+- `GET /` — dashboard: status, updates, Wake-on-LAN buttons, power controls
+- `GET /api/health` — public minimal health (uptime, disk/memory %, cached
+  patch summary) for automated monitoring; no token needed
 - `GET /api/status` — hostname, OS, uptime, CPU / memory / disk usage
+- `GET /api/patches` — Windows Update compliance: pending count and titles,
+  reboot-required flag, last installed hotfix (refreshed in the background
+  every 6 hours by `patch_check.ps1`)
 - `POST /api/wol` — send a magic packet: `{"device": "name"}` or `{"mac": "AA:BB:CC:DD:EE:FF"}`
 - `POST /api/power` — `{"action": "sleep" | "restart" | "shutdown", "confirm": true}`
+
+## Monitoring
+
+The `/api/health` endpoint is intentionally public (minimal data only) so a
+monitor can poll it without the token. A scheduled check every 30 minutes
+watches reachability and disk usage and alerts on state changes; a weekly
+report covers pending updates and reboot status.
 
 ## Setup (Windows)
 
@@ -62,3 +74,6 @@ triggered "at log on" that runs `pythonw.exe C:\path\to\home-ops\app.py`
   `config.example.json` is committed.
 - Power actions require `"confirm": true` in the API, and the dashboard
   makes you tap twice.
+- `/api/health` is public by design but exposes only uptime, disk/memory
+  percentages, and patch counts, enough for monitoring and nothing more.
+  Everything else needs the token.
