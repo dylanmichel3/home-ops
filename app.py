@@ -44,8 +44,8 @@ def require_token(view):
 
 
 @app.get("/")
-@require_token
 def index():
+    # The page itself is public; every API route it calls still needs the token.
     return render_template("index.html", devices=sorted(DEVICES))
 
 
