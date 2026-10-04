@@ -19,9 +19,7 @@ bearer token, so nothing else on the tailnet can use it without the secret.
   every 6 hours by `patch_check.ps1`)
 - `GET /api/events` — public event-log digest: Critical/Error/Warning counts
   from the System and Application logs over the last 24 hours, grouped by
-  source (refreshed in the background every 2 hours by `event_digest.ps1`).
-  Each group also carries a plain-language `friendly` explanation next to
-  the technical details.
+  source (refreshed in the background every 2 hours by `event_digest.ps1`)
 - `GET /api/disk` — disk usage breakdown: per-drive totals and the largest
   top-level folders (refreshed in the background every 12 hours by
   `disk_usage.ps1`; the first scan can take a while on a full drive)

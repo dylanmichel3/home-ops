@@ -193,51 +193,6 @@ def api_patches():
 EVENT_CACHE = {"fetched_at": None, "data": {"total": None, "errors": None, "warnings": None, "groups": []}}
 DISK_CACHE = {"fetched_at": None, "data": {"drives": []}}
 
-# Plain-language explanations for common Windows event IDs, keyed by
-# (log name, event id). Shown next to the technical details, never instead.
-FRIENDLY_EVENTS = {
-    ("System", 41): "The PC shut down or restarted unexpectedly, like a power cut or hard crash rather than a normal shutdown.",
-    ("System", 6008): "The last shutdown was unexpected; the PC didn't shut down cleanly.",
-    ("System", 1074): "The PC was restarted or shut down by a user, an app, or an update.",
-    ("System", 1001): "Windows hit a blue screen and restarted.",
-    ("System", 1014): "The PC had trouble reaching its DNS server, so some sites or services may not have loaded.",
-    ("System", 10016): "A background Windows component hit a permission snag. Almost always harmless.",
-    ("System", 10010): "A background app component didn't register properly. Usually harmless.",
-    ("System", 7031): "A Windows service crashed and Windows restarted it.",
-    ("System", 7034): "A Windows service stopped unexpectedly.",
-    ("System", 7000): "A Windows service failed to start.",
-    ("System", 7009): "A Windows service took too long to start and timed out.",
-    ("System", 7045): "A new system service was installed on the PC.",
-    ("System", 219): "A driver failed to load for a piece of hardware.",
-    ("System", 153): "A storage drive had a read/write error. Worth keeping an eye on that drive.",
-    ("System", 55): "Windows found corruption in a drive's file system.",
-    ("System", 10110): "A USB or plug-and-play device ran into a problem.",
-    ("System", 10111): "A USB or plug-and-play device failed.",
-    ("System", 36871): "An encrypted (TLS) connection ran into an error.",
-    ("System", 19): "A Windows update failed to install.",
-    ("Application", 1000): "A program crashed.",
-    ("Application", 1001): "Windows collected a crash report after something failed.",
-    ("Application", 1002): "A program stopped responding (froze).",
-    ("Application", 1026): "An app built on Microsoft's .NET framework crashed.",
-    ("Application", 8193): "Volume Shadow Copy hit an issue, which can affect backups and restore points.",
-    ("Application", 8194): "Volume Shadow Copy had trouble talking to one of its writers, which can affect backups.",
-    ("Application", 1008): "Windows couldn't load performance stats for a component. Usually harmless.",
-    ("Application", 1023): "A performance monitoring library failed to load. Usually harmless.",
-    ("Application", 10): "A Windows management component (WMI) had an issue, which can affect monitoring tools.",
-    ("Application", 902): "A database engine that Windows apps use reported an error.",
-    ("Application", 455): "An app's internal database file ran into an issue.",
-    ("Application", 10005): "A program's installation or update failed.",
-}
-
-
-def friendly_description(log, event_id, level, source):
-    text = FRIENDLY_EVENTS.get((log, event_id))
-    if text:
-        return text
-    kind = "error" if level in ("Critical", "Error") else "warning"
-    return "Windows logged a %s from %s. The technical details are below." % (kind, source)
-
-
 def run_ps_script(name):
     script = os.path.join(BASE_DIR, name)
     proc = subprocess.run(
@@ -275,16 +230,9 @@ threading.Thread(target=refresh_loop, args=("disk_usage.ps1", DISK_CACHE, 12 * 3
 
 @app.get("/api/events")
 def api_events():
-    """Public event-log digest for the daily monitor. Each group carries a
-    plain-language "friendly" explanation next to the technical details."""
-    data = dict(EVENT_CACHE["data"])
-    groups = []
-    for g in data.get("groups", []):
-        g = dict(g)
-        g["friendly"] = friendly_description(g.get("log"), g.get("event_id"), g.get("level"), g.get("source"))
-        groups.append(g)
-    data["groups"] = groups
-    return jsonify({"fetched_at": EVENT_CACHE["fetched_at"], **data})
+    """Public event-log digest for the daily monitor. Tailnet-only service;
+    the token still guards power, WoL, and full status."""
+    return jsonify({"fetched_at": EVENT_CACHE["fetched_at"], **EVENT_CACHE["data"]})
 
 
 @app.get("/api/disk")
