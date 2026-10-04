@@ -207,6 +207,7 @@ document.getElementById('eventCheck').onclick = async () => {
       (e.groups || []).slice(0, 10).forEach(g => {
         html += '<div class="stat"><span>' + esc(g.source) + ' #' + esc(String(g.event_id)) +
           ' <span class="hint">(' + esc(g.level) + ' x' + g.count + ')</span></span></div>' +
+          '<p>' + esc(g.friendly || '') + '</p>' +
           '<p class="hint">' + esc(g.latest) + ' — ' + esc(g.sample || '') + '</p>';
       });
     }
