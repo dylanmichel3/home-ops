@@ -68,6 +68,20 @@
 </div>
 
 <div class="card">
+  <h2>Events</h2>
+  <div class="row"><button id="eventCheck">Check event log</button></div>
+  <div id="events"><p class="hint">Not loaded yet.</p></div>
+  <div class="msg" id="eventMsg"></div>
+</div>
+
+<div class="card">
+  <h2>Disk</h2>
+  <div class="row"><button id="diskCheck">Check disk usage</button></div>
+  <div id="disk"><p class="hint">Not loaded yet.</p></div>
+  <div class="msg" id="diskMsg"></div>
+</div>
+
+<div class="card">
   <h2>Wake on LAN</h2>
   {% if devices %}
   <div class="row">
@@ -171,6 +185,67 @@ document.getElementById('patchCheck').onclick = async () => {
   } catch (e) {
     box.innerHTML = '<p class="hint">Could not load update info.</p>';
     flash('patchMsg', e.message, true);
+  }
+};
+
+function gb(b) { return (b / 1e9).toFixed(1) + ' GB'; }
+
+document.getElementById('eventCheck').onclick = async () => {
+  const box = document.getElementById('events');
+  box.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const r = await fetch('/api/events', {headers: headers()});
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    const e = await r.json();
+    let html;
+    if (e.total === null || e.total === undefined) {
+      html = '<p class="hint">No event data yet. The app refreshes it in the background every couple of hours after starting.</p>';
+    } else if (e.total === 0) {
+      html = '<p class="msg ok">All quiet: no errors or warnings in the last 24 hours.</p>';
+    } else {
+      html = stat('Errors (24h)', e.errors) + stat('Warnings (24h)', e.warnings);
+      (e.groups || []).slice(0, 10).forEach(g => {
+        html += '<div class="stat"><span>' + esc(g.source) + ' #' + esc(String(g.event_id)) +
+          ' <span class="hint">(' + esc(g.level) + ' x' + g.count + ')</span></span></div>' +
+          '<p class="hint">' + esc(g.latest) + ' — ' + esc(g.sample || '') + '</p>';
+      });
+    }
+    if (e.fetched_at) html += '<p class="hint">Checked: ' + esc(e.fetched_at) + '</p>';
+    box.innerHTML = html;
+    flash('eventMsg', 'Event log loaded.', false);
+  } catch (err) {
+    box.innerHTML = '<p class="hint">Could not load event log.</p>';
+    flash('eventMsg', err.message, true);
+  }
+};
+
+document.getElementById('diskCheck').onclick = async () => {
+  const box = document.getElementById('disk');
+  box.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const r = await fetch('/api/disk', {headers: headers()});
+    if (r.status === 401) throw new Error('Wrong token. Save the right one above.');
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    const d = await r.json();
+    let html = '';
+    if (!d.drives || !d.drives.length) {
+      html = '<p class="hint">No disk data yet. The first scan runs in the background after startup and can take a while on a full drive.</p>';
+    } else {
+      d.drives.forEach(drv => {
+        const used = drv.total_bytes - drv.free_bytes;
+        const pct = drv.total_bytes ? Math.round(used / drv.total_bytes * 100) : 0;
+        html += '<h3>' + esc(drv.drive) + ' — ' + gb(drv.free_bytes) + ' free (' + pct + '% used)</h3>' + bar(pct);
+        (drv.top || []).forEach(t => {
+          html += stat(esc(t.name), gb(t.bytes));
+        });
+      });
+    }
+    if (d.fetched_at) html += '<p class="hint">Scanned: ' + esc(d.fetched_at) + '</p>';
+    box.innerHTML = html;
+    flash('diskMsg', 'Disk usage loaded.', false);
+  } catch (err) {
+    box.innerHTML = '<p class="hint">Could not load disk usage.</p>';
+    flash('diskMsg', err.message, true);
   }
 };
 

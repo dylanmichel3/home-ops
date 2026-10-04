@@ -190,6 +190,58 @@ def api_patches():
     )
 
 
+EVENT_CACHE = {"fetched_at": None, "data": {"total": None, "errors": None, "warnings": None, "groups": []}}
+DISK_CACHE = {"fetched_at": None, "data": {"drives": []}}
+
+
+def run_ps_script(name):
+    script = os.path.join(BASE_DIR, name)
+    proc = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    if not proc.stdout.strip():
+        raise RuntimeError(name + " produced no output: " + proc.stderr.strip()[:200])
+    return json.loads(proc.stdout)
+
+
+def refresh_loop(script, cache, interval):
+    while True:
+        try:
+            cache["data"] = run_ps_script(script)
+            cache["fetched_at"] = datetime.now().isoformat(timespec="seconds")
+        except Exception:
+            pass  # keep the previous cache; the next cycle retries
+        time.sleep(interval)
+
+
+threading.Thread(target=refresh_loop, args=("event_digest.ps1", EVENT_CACHE, 2 * 3600), daemon=True).start()
+threading.Thread(target=refresh_loop, args=("disk_usage.ps1", DISK_CACHE, 12 * 3600), daemon=True).start()
+
+
+@app.get("/api/events")
+def api_events():
+    """Public event-log digest for the daily monitor. Tailnet-only service;
+    the token still guards power, WoL, and full status."""
+    return jsonify({"fetched_at": EVENT_CACHE["fetched_at"], **EVENT_CACHE["data"]})
+
+
+@app.get("/api/disk")
+@require_token
+def api_disk():
+    return jsonify({"fetched_at": DISK_CACHE["fetched_at"], **DISK_CACHE["data"]})
+
+
 if __name__ == "__main__":
     if not TOKEN or TOKEN == "CHANGE-ME":
         raise SystemExit("Set a real token in config.json first (see config.example.json).")

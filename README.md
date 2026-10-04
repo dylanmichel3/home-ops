@@ -17,6 +17,12 @@ bearer token, so nothing else on the tailnet can use it without the secret.
 - `GET /api/patches` — Windows Update compliance: pending count and titles,
   reboot-required flag, last installed hotfix (refreshed in the background
   every 6 hours by `patch_check.ps1`)
+- `GET /api/events` — public event-log digest: Critical/Error/Warning counts
+  from the System and Application logs over the last 24 hours, grouped by
+  source (refreshed in the background every 2 hours by `event_digest.ps1`)
+- `GET /api/disk` — disk usage breakdown: per-drive totals and the largest
+  top-level folders (refreshed in the background every 12 hours by
+  `disk_usage.ps1`; the first scan can take a while on a full drive)
 - `POST /api/wol` — send a magic packet: `{"device": "name"}` or `{"mac": "AA:BB:CC:DD:EE:FF"}`
 - `POST /api/power` — `{"action": "sleep" | "restart" | "shutdown", "confirm": true}`
 
