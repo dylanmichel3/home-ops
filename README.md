@@ -23,6 +23,11 @@ bearer token, so nothing else on the tailnet can use it without the secret.
 - `GET /api/disk` — disk usage breakdown: per-drive totals and the largest
   top-level folders (refreshed in the background every 12 hours by
   `disk_usage.ps1`; the first scan can take a while on a full drive)
+- `GET /api/speed?hours=168` — internet speed history: latest
+  download/upload/ping plus per-test points for graphing (tests run hourly
+  in the background via `speed_logger.py`, stored in `speedtests.db`)
+- `POST /api/speed/test` — run a speed test right now instead of waiting
+  for the hourly slot
 - `POST /api/wol` — send a magic packet: `{"device": "name"}` or `{"mac": "AA:BB:CC:DD:EE:FF"}`
 - `POST /api/power` — `{"action": "sleep" | "restart" | "shutdown", "confirm": true}`
 
@@ -32,6 +37,10 @@ The `/api/health` endpoint is intentionally public (minimal data only) so a
 monitor can poll it without the token. A scheduled check every 30 minutes
 watches reachability and disk usage and alerts on state changes; a weekly
 report covers pending updates and reboot status.
+
+Speed tests run hourly and each one downloads/uploads a chunk of real data
+(tens of MB). That's negligible on an unmetered home connection, but worth
+knowing if the PC is ever on a metered link.
 
 ## Setup (Windows)
 

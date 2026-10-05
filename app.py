@@ -18,6 +18,9 @@ from flask import Flask, jsonify, render_template, request
 
 import psutil
 
+from speed_logger import history as speed_history
+from speed_logger import run_speedtest_once, speed_loop
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
@@ -226,6 +229,7 @@ def refresh_loop(script, cache, interval):
 
 threading.Thread(target=refresh_loop, args=("event_digest.ps1", EVENT_CACHE, 2 * 3600), daemon=True).start()
 threading.Thread(target=refresh_loop, args=("disk_usage.ps1", DISK_CACHE, 12 * 3600), daemon=True).start()
+threading.Thread(target=speed_loop, daemon=True).start()
 
 
 @app.get("/api/events")
@@ -239,6 +243,21 @@ def api_events():
 @require_token
 def api_disk():
     return jsonify({"fetched_at": DISK_CACHE["fetched_at"], **DISK_CACHE["data"]})
+
+
+@app.get("/api/speed")
+@require_token
+def api_speed():
+    hours = request.args.get("hours", default=168, type=int)
+    hours = max(1, min(hours, 24 * 30))
+    return jsonify(speed_history(hours))
+
+
+@app.post("/api/speed/test")
+@require_token
+def api_speed_test():
+    threading.Thread(target=run_speedtest_once, daemon=True).start()
+    return jsonify({"ok": True, "note": "test started in background"})
 
 
 if __name__ == "__main__":

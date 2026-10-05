@@ -82,6 +82,20 @@
 </div>
 
 <div class="card">
+  <h2>Speed</h2>
+  <div class="row">
+    <button id="speedCheck">Check speed</button>
+    <button id="speedTestNow">Test now</button>
+    <button data-range="24">24h</button>
+    <button data-range="168">7d</button>
+    <button data-range="720">30d</button>
+  </div>
+  <div id="speed"><p class="hint">Not loaded yet.</p></div>
+  <canvas id="speedChart" width="600" height="220" style="width:100%;height:auto;display:none"></canvas>
+  <div class="msg" id="speedMsg"></div>
+</div>
+
+<div class="card">
   <h2>Wake on LAN</h2>
   {% if devices %}
   <div class="row">
@@ -248,6 +262,84 @@ document.getElementById('diskCheck').onclick = async () => {
     flash('diskMsg', err.message, true);
   }
 };
+
+let speedRange = 168;
+
+function drawSpeedChart(points) {
+  const cv = document.getElementById('speedChart');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  if (points.length < 2) { cv.style.display = 'none'; return; }
+  cv.style.display = 'block';
+  const downs = points.map(p => p.download_mbps);
+  const ups = points.map(p => p.upload_mbps);
+  const maxV = Math.max(...downs, ...ups, 1);
+  const pad = 34;
+  const x = i => pad + i * (W - pad * 2) / (points.length - 1);
+  const y = v => H - pad - (v / maxV) * (H - pad * 2 - 14);
+  ctx.strokeStyle = '#8884'; ctx.fillStyle = '#888'; ctx.font = '11px system-ui';
+  [0, 0.5, 1].forEach(f => {
+    const yy = y(maxV * f);
+    ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(W - pad, yy); ctx.stroke();
+    ctx.fillText(Math.round(maxV * f) + ' Mbps', 2, yy + 4);
+  });
+  const line = (vals, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    vals.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+    ctx.stroke();
+  };
+  line(downs, '#2a7'); line(ups, '#36c');
+  ctx.fillStyle = '#2a7'; ctx.fillRect(pad, 8, 12, 12);
+  ctx.fillStyle = '#888'; ctx.fillText('Download', pad + 16, 18);
+  ctx.fillStyle = '#36c'; ctx.fillRect(pad + 104, 8, 12, 12);
+  ctx.fillStyle = '#888'; ctx.fillText('Upload', pad + 120, 18);
+  const fmt = ts => String(ts).slice(5, 16).replace('T', ' ');
+  ctx.fillText(fmt(points[0].ts), pad, H - 8);
+  const last = fmt(points[points.length - 1].ts);
+  ctx.fillText(last, W - pad - ctx.measureText(last).width, H - 8);
+}
+
+async function loadSpeed() {
+  const box = document.getElementById('speed');
+  box.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const r = await fetch('/api/speed?hours=' + speedRange, {headers: headers()});
+    if (r.status === 401) throw new Error('Wrong token. Save the right one above.');
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    const d = await r.json();
+    let html = '';
+    if (d.latest) {
+      html = stat('Download', d.latest.download_mbps + ' Mbps') +
+             stat('Upload', d.latest.upload_mbps + ' Mbps') +
+             stat('Ping', d.latest.ping_ms + ' ms') +
+             '<p class="hint">Last test: ' + esc(d.latest.ts) + ' (' + d.count + ' readings)</p>';
+    } else {
+      html = '<p class="hint">No speed data yet. Tests run hourly in the background after startup.</p>';
+    }
+    if (d.last_error) html += '<p class="msg error">Last test failed: ' + esc(d.last_error) + '</p>';
+    box.innerHTML = html;
+    drawSpeedChart(d.points || []);
+    flash('speedMsg', 'Speed data loaded.', false);
+  } catch (err) {
+    box.innerHTML = '<p class="hint">Could not load speed data.</p>';
+    flash('speedMsg', err.message, true);
+  }
+}
+document.getElementById('speedCheck').onclick = loadSpeed;
+document.getElementById('speedTestNow').onclick = async () => {
+  try {
+    const r = await fetch('/api/speed/test', {method: 'POST', headers: headers()});
+    if (r.status === 401) throw new Error('Wrong token. Save the right one above.');
+    if (!r.ok) throw new Error('Request failed: ' + r.status);
+    flash('speedMsg', 'Test started. Check back in a minute or two.', false);
+  } catch (err) {
+    flash('speedMsg', err.message, true);
+  }
+};
+document.querySelectorAll('[data-range]').forEach(b => {
+  b.onclick = () => { speedRange = +b.dataset.range; loadSpeed(); };
+});
 
 document.querySelectorAll('[data-wake]').forEach(btn => {
   btn.onclick = async () => {
