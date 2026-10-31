@@ -76,7 +76,17 @@ It is also a deliberate practice environment for real systems administration wor
    ```
 7. On a phone with Tailscale connected, open `http://100.x.y.z:5000` and paste the token.
 
-To start it at logon, create a Task Scheduler task triggered **at log on** that runs `pythonw.exe C:\path\to\home-ops\app.py` (`pythonw` runs without a console window).
+### Run automatically at logon
+
+Run the included script once, from the repo folder:
+
+```
+powershell -ExecutionPolicy Bypass -File .\install-autostart.ps1
+```
+
+It registers a Task Scheduler task named **Home Ops** that starts `app.py` with `pythonw.exe` (no console window) one minute after logon — the delay gives Tailscale time to bring up the address the app binds to. The task restarts on failure (3 attempts, 1 minute apart), has no execution time limit, and the script verifies `/api/health` answers before it finishes. It deliberately looks for a real python.org install and ignores the Microsoft Store `WindowsApps` stubs, which fail under Task Scheduler. Safe to re-run; it replaces the existing task.
+
+The manual equivalent: create a Task Scheduler task triggered **at log on** (delay 1 minute) that runs `pythonw.exe "C:\path\to\home-ops\app.py"`, with restart-on-failure set under Settings and no execution time limit.
 
 ## Configuration
 
@@ -113,5 +123,6 @@ To start it at logon, create a Task Scheduler task triggered **at log on** that 
 | `event_digest.ps1` | System/Application event digest via Get-WinEvent |
 | `disk_usage.ps1` | Per-drive usage and largest items |
 | `speed_logger.py` | Hourly speed test runner and history queries |
+| `install-autostart.ps1` | One-time setup: registers the Task Scheduler logon task |
 | `config.example.json` | Example configuration |
 | `requirements.txt` | Python dependencies |
